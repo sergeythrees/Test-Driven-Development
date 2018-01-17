@@ -1,4 +1,3 @@
-const request = require('request');
 const cheerio = require('cheerio');
 const validator = require('validator');
 const commandLineArgs = require('command-line-args');
@@ -10,15 +9,18 @@ const Crawler = require("js-crawler");
 const config = {
 	allLinksFilename: 'all-links.txt',
 	brokenLinksFilename: 'broken-links.txt',
-	optionDefinitions: [{name: 'url', alias: 'u', type: String}]
+	optionDefinitions: [
+		{name: 'url', alias: 'u', type: String},
+        {name: 'depth', alias: 'd', type: Number}
+        ]
 };
 
-let allLinksFromPage = [];
-let brokenLinks = [];
-
 const statusWhiteList = [
-	HttpStatus.TOO_MANY_REQUESTS,
+    HttpStatus.TOO_MANY_REQUESTS,
 ];
+
+let allVisitedLinks = [];
+let brokenLinks = [];
 
 const options = commandLineArgs(config.optionDefinitions);
 if (!options.hasOwnProperty('url'))
@@ -26,6 +28,8 @@ if (!options.hasOwnProperty('url'))
 	console.log('URL ссылка не указана');
 	process.exit(1);
 }
+
+const depth = options.depth ? options.depth : 2;
 
 let extractDomain = (url) => {
 	let domain;
@@ -55,7 +59,7 @@ const crawler = new Crawler().configure({
 		return (url.indexOf(targetDomain) > 0);
 	},
 	ignoreRelative: false,
-	depth: 2
+	depth: depth
 });
 
 const prepareLink = (link, targetDomain) => {
@@ -81,7 +85,7 @@ const pushLink = (arr, pageUrl, pageStatus) => {
 	}
 	else
 	{
-		allLinksFromPage.push({url: pageUrl, status: ` -- ${pageStatus} (${statusText})`});
+		allVisitedLinks.push({url: pageUrl, status: ` -- ${pageStatus} (${statusText})`});
 	}
 };
 
@@ -117,14 +121,14 @@ crawler.crawl({
 				.crawl({
 					url: preparedLink,
 					success: (page) => {
-						pushLink(allLinksFromPage, page.url, page.status);
+						pushLink(allVisitedLinks, page.url, page.status);
 					},
 					failure: (page) => {
 						if (!statusWhiteList.includes(page.status))
 						{
 							pushLink(brokenLinks, page.url, page.status);
 						}
-						pushLink(allLinksFromPage, page.url, page.status);
+						pushLink(allVisitedLinks, page.url, page.status);
 					}
 				});
 		});
@@ -134,11 +138,11 @@ crawler.crawl({
 		{
 			pushLink(brokenLinks, page.url, page.status);
 		}
-		pushLink(allLinksFromPage, page.url, page.status);
+		pushLink(allVisitedLinks, page.url, page.status);
 	},
 	finished: function() {
-		allLinksFromPage = removeDuplicates(allLinksFromPage, 'url');
-		allLinksFromPage.forEach((link) => {
+		allVisitedLinks = removeDuplicates(allVisitedLinks, 'url');
+		allVisitedLinks.forEach((link) => {
 			fs.appendFileSync(config.allLinksFilename,`${link.url} ${link.status}\n`);
 		});
 
@@ -147,7 +151,7 @@ crawler.crawl({
 			fs.appendFileSync(config.brokenLinksFilename, `${link.url} ${link.status}\n`);
 		});
 
-		fs.appendFileSync(config.allLinksFilename, `Всего ссылок: ${allLinksFromPage.length}\n`);
+		fs.appendFileSync(config.allLinksFilename, `Всего ссылок: ${allVisitedLinks.length}\n`);
 		fs.appendFileSync(config.brokenLinksFilename, `Битых ссылок: ${brokenLinks.length}\n`);
 	}
 });
